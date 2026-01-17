@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -94,6 +94,7 @@
     <Compile Include="Game\AI\Decks\TrickstarExecutor.cs" />
     <Compile Include="Game\AI\Decks\WitchcraftExecutor.cs" />
     <Compile Include="Game\AI\Decks\YosenjuExecutor.cs" />
+    <Compile Include="Game\AI\Decks\YuseiFudoExecutor.cs" />
     <Compile Include="Game\AI\Decks\ZexalWeaponsExecutor.cs" />
     <Compile Include="Game\AI\Decks\ZoodiacExecutor.cs" />
     <Compile Include="Game\AI\Decks\[HealingJAMExecutor].cs" />
@@ -111,6 +112,7 @@
     <Compile Include="YGOSharp.Network\AsyncNetworkServer.cs" />
     <Compile Include="YGOSharp.Network\AsyncYGOClient.cs" />
     <Compile Include="YGOSharp.Network\BinaryClient.cs" />
+    <Reference Include="System.Core" />
     <Compile Include="YGOSharp.Network\Enums\CtosMessage.cs" />
     <Compile Include="YGOSharp.Network\Enums\GameState.cs" />
     <Compile Include="YGOSharp.Network\Enums\PlayerChange.cs" />
@@ -141,11 +143,4 @@ if exist %25E4K_OUTPUT%25 rmdir /S /Q %25E4K_OUTPUT%25
 "$(NuGetPackageRoot)embeddinator-4000\0.4.0\tools\Embeddinator-4000.exe" "$(TargetPath)" --gen=Java --platform=Android --outdir=%25E4K_OUTPUT%25 -c -v
 </PostBuildEvent>
   </PropertyGroup>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
 </Project>
