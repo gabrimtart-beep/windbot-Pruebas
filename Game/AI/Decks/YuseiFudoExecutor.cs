@@ -1,36 +1,47 @@
+using System;
 using YGOSharp.OCGWrapper.Enums;
+using System.Collections.Generic;
 using WindBot;
 using WindBot.Game;
 using WindBot.Game.AI;
+using System.Linq;
 
 namespace WindBot.Game.AI.Decks
 {
-    [Deck("YuseiFudo", "AI_Yusei")] // "YuseiFudo" debe ser el nombre de tu archivo .ydk
+    [Deck("YuseiFudo", "AI_Yusei")]
     public class YuseiFudoExecutor : DefaultExecutor
     {
         public class CardId
         {
-            public const int Tuning = 63977008;
-            public const int EffectVeiler = 97268402;
             public const int StardustDragon = 44508094;
-            public const int JunkSynchron = 63977008; // Ejemplo
+            public const int JunkSynchron = 63977066;
+            public const int JunkWarrior = 60800381;
+            public const int QuillboltHedgehog = 23574823;
+            public const int Tuning = 63180001;
+            // Añade aquí más IDs si lo necesitas
         }
 
-        public YuseiFudoExecutor(GameAI ai, Duel duel) : base(ai, duel)
+        public YuseiFudoExecutor(GameAI ai, Duel duel)
+            : base(ai, duel)
         {
-            // 1. REGLAS DE ACTIVACIÓN (Magias y efectos)
-            AddProcessor(CardId.Tuning, DefaultSpellActivate);
-            AddProcessor(CardId.EffectVeiler, DefaultTrapActivate); // Se usa en el turno del oponente
+            // Siguiendo el ejemplo de ABC/Dragun:
+            AddExecutor(ExecutorType.Activate, CardId.Tuning);
+            AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon);
+            AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
+            
+            AddExecutor(ExecutorType.Activate, DefaultDontChainMyself);
+            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron);
+            AddExecutor(ExecutorType.Summon);
+            AddExecutor(ExecutorType.SpSummon);
 
-            // 2. REGLAS DE INVOCACIÓN (Monstruos)
-            AddProcessor(CardId.StardustDragon, DefaultSynchroSummon);
-            
-            // 3. REGLA POR DEFECTO: Invocar el monstruo más fuerte que pueda
-            AddProcessor(ExecutorType.Summon, DefaultSummon);
-            AddProcessor(ExecutorType.SpSummon, DefaultSpSummon);
-            
-            // 4. REGLA DE ATAQUE: Atacar con todo
-            AddProcessor(ExecutorType.MonsterExtractSummon, DefaultMonsterExtractSummon);
+            AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
+            AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
+        }
+
+        // Basado en los ejemplos, la lógica de batalla por defecto
+        public override bool OnPreBattleBetween(ClientCard attacker, ClientCard defender)
+        {
+            return base.OnPreBattleBetween(attacker, defender);
         }
     }
 }
