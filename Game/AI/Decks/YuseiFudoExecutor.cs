@@ -31,14 +31,14 @@ namespace WindBot.Game.AI.Decks
         {
             // 1. Interrupciones y Buscadores
             AddExecutor(ExecutorType.Activate, CardId.EffectVeiler, DefaultEffectVeiler);
-            AddExecutor(ExecutorType.Activate, CardId.Tuning, TuningLogic);
+            AddExecutor(ExecutorType.Activate, CardId.Tuning);
 
-            // 2. Extra Deck - Sincronía (Shooting Star > Stardust)
+            // 2. Extra Deck - Sincronía
             AddExecutor(ExecutorType.SpSummon, CardId.ShootingStarDragon);
-            AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon, StardustLogic);
+            AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon);
             AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
 
-            // 3. REGLA DE DEFENSA: Colocar si el rival es más fuerte que nuestros monstruos en mano
+            // 3. REGLA DE DEFENSA (Basada en Blue-Eyes)
             AddExecutor(ExecutorType.MonsterSet, () => 
                 Enemy.GetMonsterCount() > 0 && Util.IsOneEnemyBetterThanValue(1800, false));
 
@@ -48,31 +48,19 @@ namespace WindBot.Game.AI.Decks
             AddExecutor(ExecutorType.Summon); 
             AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
 
-            // 5. Magias/Trampas y SelectPlace (Inspirado en TimeThief)
+            // 5. Magias/Trampas y SelectPlace (Basada en TimeThief)
             AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, ScarecrowLogic);
             AddExecutor(ExecutorType.SpellSet, CardId.ScrapIronScarecrow, TrapSetLogic);
             AddExecutor(ExecutorType.SpellSet, CardId.StarlightRoad, TrapSetLogic);
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
 
             // 6. Reposición
-            AddExecutor(ExecutorType.Repos, MonsterReposLogic);
-        }
-
-        private bool TuningLogic()
-        {
-            return Bot.Deck.Count > 3;
+            AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
         }
 
         private bool JunkSynchronLogic()
         {
-            // Solo invocar si hay un objetivo válido en cementerio para no perder el efecto
             return Bot.Graveyard.Any(c => c.Level <= 2);
-        }
-
-        private bool StardustLogic()
-        {
-            // Evitar invocar si el oponente tiene cartas de negación masiva activas
-            return !Enemy.HasInSpellZone(CardId.StarlightRoad); 
         }
 
         private bool ScarecrowLogic()
@@ -83,40 +71,30 @@ namespace WindBot.Game.AI.Decks
         private bool TrapSetLogic()
         {
             if (Bot.GetSpellCountWithoutField() >= 4) return false;
-            // Usar zonas seguras para evitar efectos de columna
-            AI.SelectPlace(Zones.z0 | Zones.z4 | Zones.z1 | Zones.z3);
+            // Evita la columna central (Zonas 0, 1, 3, 4 son seguras)
+            AI.SelectPlace(Zones.z0 | Zones.z1 | Zones.z3 | Zones.z4);
             return true;
         }
 
-        private bool MonsterReposLogic()
+        // --- SOLUCIÓN AL ERROR CS0115 ---
+        // Se ajustó la firma eliminando 'int hint' o usando la firma universal de WindBot
+        public override IList<ClientCard> OnSelectCard(IList<ClientCard> cards, int min, int max, bool cancelable)
         {
-            if (Card.IsFacedown()) return true;
-            // Si estamos en ataque pero el enemigo es más fuerte, pasar a defensa
-            if (Card.IsAttack() && Util.IsOneEnemyBetterThanValue(Card.Attack, true))
-                return true;
-            return DefaultMonsterRepos();
-        }
-
-        // CORRECCIÓN DEL ERROR DE COMPILACIÓN:
-        // Se cambió la firma para coincidir con el override de la clase base
-        public override IList<ClientCard> OnSelectCard(IList<ClientCard> cards, int min, int max, int hint, bool cancelable)
-        {
-            // Si el juego nos pide tributar o descartar, intentamos NO elegir a los Ases de Sincronía
-            if (cards.Any(c => c.IsCode(CardId.StardustDragon) || c.IsCode(CardId.ShootingStarDragon)))
+            // Priorizar no descartar o tributar a los monstruos de Sincronía
+            if (cards.Any(c => c.IsCode(CardId.StardustDragon, CardId.ShootingStarDragon)))
             {
-                var preferred = cards.Where(c => !c.IsCode(CardId.StardustDragon) && !c.IsCode(CardId.ShootingStarDragon)).ToList();
-                if (preferred.Count >= min) return base.OnSelectCard(preferred, min, max, hint, cancelable);
+                var filter = cards.Where(c => !c.IsCode(CardId.StardustDragon, CardId.ShootingStarDragon)).ToList();
+                if (filter.Count >= min) return base.OnSelectCard(filter, min, max, cancelable);
             }
-            return base.OnSelectCard(cards, min, max, hint, cancelable);
+            return base.OnSelectCard(cards, min, max, cancelable);
         }
 
         public override BattlePhaseAction OnSelectAttackTarget(ClientCard attacker, IList<ClientCard> defenders)
         {
-            // Lógica de ataque precavido si hay muchas trampas (Escenario A)
-            if (Enemy.GetSpellCountWithoutField() >= 2 && attacker.Attack < 2500)
-            {
-                if (attacker.Attack <= 1500) return null;
-            }
+            // Lógica de ataque precavido (Inspirado en Level8Executor)
+            if (Enemy.GetSpellCountWithoutField() >= 2 && attacker.Attack < 2000)
+                return null;
+            
             return base.OnSelectAttackTarget(attacker, defenders);
         }
     }
