@@ -1,105 +1,140 @@
 using System;
-using YGOSharp.OCGWrapper.Enums;
 using System.Collections.Generic;
+using System.Linq;
 using WindBot;
 using WindBot.Game;
 using WindBot.Game.AI;
-using System.Linq;
+using YGOSharp.OCGWrapper.Enums;
 
 namespace WindBot.Game.AI.Decks
 {
-    [Deck("YuseiFudo", "AI_Yusei")]
+    [Deck("YuseiFudo", "AI_Yusei_V2")]
     public class YuseiFudoExecutor : DefaultExecutor
     {
         public class CardId
         {
             public const int StardustDragon = 44508094;
+            public const int ShootingStarDragon = 24696097;
             public const int JunkSynchron = 63977066;
             public const int JunkWarrior = 60800381;
             public const int QuillboltHedgehog = 23574823;
+            public const int Doppelwarrior = 53855409;
+            public const int JetSynchron = 9742784;
             public const int Tuning = 63180001;
+            public const int ScrapIronScarecrow = 35346668;
+            public const int EffectVeiler = 97268402;
+            public const int StarlightRoad = 58120400;
         }
 
         public YuseiFudoExecutor(GameAI ai, Duel duel)
             : base(ai, duel)
         {
-            // --- 1. Lógica de Activación ---
-            AddExecutor(ExecutorType.Activate, CardId.Tuning);
-            AddExecutor(ExecutorType.Activate, DefaultDontChainMyself);
+            // 1. Interrupciones y Magias de búsqueda (Prioridad alta como en Swordsoul)
+            AddExecutor(ExecutorType.Activate, CardId.EffectVeiler, DefaultEffectVeiler);
+            AddExecutor(ExecutorType.Activate, CardId.Tuning, TuningLogic);
 
-            // --- 2. Invocación Inteligente ---
-            // Monstruos "As" siempre en ataque si es posible
-            AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon);
-            
-            // Lógica de supervivencia: Invocar en defensa si el rival es más fuerte
-            AddExecutor(ExecutorType.Summon, SummonEnDefensaSiEsDebil);
-            AddExecutor(ExecutorType.SpSummon, SummonEnDefensaSiEsDebil);
+            // 2. Invocaciones Especiales de Sincronía (Lógica de "Shooting Star" primero)
+            AddExecutor(ExecutorType.SpSummon, CardId.ShootingStarDragon);
+            AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon, StardustLogic);
+            AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
 
-            AddExecutor(ExecutorType.Summon);
-            AddExecutor(ExecutorType.SpSummon);
+            // 3. REGLA DE DEFENSA: Colocar monstruos si el rival es peligroso
+            // Inspirado en el check de "enemyBetter" de Blue-Eyes
+            AddExecutor(ExecutorType.MonsterSet, () => 
+                (Enemy.GetMonsterCount() > 0 && Util.IsOneEnemyBetterThanValue(1800, false)) || 
+                Bot.LifePoints < 2000);
 
-            // --- 3. Gestión de Campo ---
-            AddExecutor(ExecutorType.Repos, ReubicarMonstruosSegunPeligro);
+            // 4. Invocaciones Normales y combos de Yusei
+            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, JunkSynchronLogic);
+            AddExecutor(ExecutorType.Summon, CardId.Doppelwarrior);
+            AddExecutor(ExecutorType.Summon); // Invocación genérica si no hay otra opción
+
+            // 5. Soporte y Trampas (Uso de SelectPlace como en TimeThief)
+            AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, ScarecrowLogic);
+            AddExecutor(ExecutorType.SpellSet, CardId.ScrapIronScarecrow, TrapSetLogic);
+            AddExecutor(ExecutorType.SpellSet, CardId.StarlightRoad, TrapSetLogic);
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
+
+            // 6. Ajustes de posición
+            AddExecutor(ExecutorType.Repos, MonsterReposLogic);
         }
 
-        // Lógica de posición al entrar al campo
-        private bool SummonEnDefensaSiEsDebil()
+        // --- LÓGICA DE CARTAS ESPECÍFICAS ---
+
+        private bool TuningLogic()
         {
-            if (Enemy.GetMonsterCount() > 0 && Util.IsOneEnemyBetterThanValue(Card.Attack, false))
-            {
-                AI.SelectPosition(CardPosition.FaceUpDefence);
-                return true;
-            }
-            return false;
+            // No activar si el mazo tiene pocas cartas (para evitar Deck Out como en Tearlaments)
+            return Bot.Deck.Count > 3;
         }
 
-        // Cambio de posición dinámico (Basado en BlueEyesExecutor)
-        private bool ReubicarMonstruosSegunPeligro()
+        private bool JunkSynchronLogic()
         {
+            // Situación B: Solo invocar si puede revivir algo para Sincronía inmediata
+            return Bot.Graveyard.Any(c => c.Level <= 2);
+        }
+
+        private bool StardustLogic()
+        {
+            // No invocar si el rival tiene cartas que "toman el control" (inspirado en Orcust)
+            return !Enemy.HasInMonstersZone(new[] { 10045474 }); // Ejemplo: Infinite Impermanence o similares
+        }
+
+        private bool ScarecrowLogic()
+        {
+            // Solo activar en el paso de batalla del oponente
+            return Duel.Player == 1 && Duel.Phase == DuelPhase.Battle;
+        }
+
+        private bool TrapSetLogic()
+        {
+            // No colocar más de 3 trampas para evitar quedar bloqueado (como en ToadallyAwesome)
+            if (Bot.GetSpellCountWithoutField() >= 3) return false;
+            
+            // Colocar en las zonas de los extremos (0 o 4) para evitar columnas de "Mekk-Knight"
+            AI.SelectPlace(Zones.z0 | Zones.z4 | Zones.z1 | Zones.z3);
+            return true;
+        }
+
+        // --- LÓGICA DE BATALLA Y POSICIÓN ---
+
+        private bool MonsterReposLogic()
+        {
+            // Si el monstruo está boca abajo, siempre voltear si el campo es seguro
+            if (Card.IsFacedown()) return true;
+
+            // Cambiar a defensa si el oponente tiene algo más fuerte
             if (Card.IsAttack() && Util.IsOneEnemyBetterThanValue(Card.Attack, true))
                 return true;
 
-            if (Card.IsDefense() && !Util.IsOneEnemyBetterThanValue(Card.Attack, true))
-            {
-                if (Card.Attack >= Card.Defense || Card.Attack > 1000)
-                    return true;
-            }
-            return false;
-        }
-
-        // --- LÓGICA DE BATALLA AVANZADA ---
-        public override bool OnPreBattleBetween(ClientCard attacker, ClientCard defender)
-        {
-            // 1. REGLA DEL BACKROW (NUEVA):
-            // Si el oponente tiene 3 o más cartas boca abajo y yo no tengo nada en mi zona de magia/trampas para defenderme
-            if (Enemy.GetSpellCountWithoutField() >= 3 && Bot.GetSpellCountWithoutField() == 0)
-            {
-                // A menos que sea Stardust Dragon (que puede protegerse a sí mismo)
-                if (!attacker.IsCode(CardId.StardustDragon))
-                {
-                    return false; // Abortar ataque por precaución
-                }
-            }
-
-            // 2. No suicidarse:
-            if (attacker.Attack <= defender.GetDefensePower())
+            // Si es un monstruo débil (Tuner) en defensa, dejarlo ahí
+            if (Card.IsDefense() && Card.Attack < 1500)
                 return false;
 
-            return base.OnPreBattleBetween(attacker, defender);
+            return DefaultMonsterRepos();
         }
 
         public override BattlePhaseAction OnSelectAttackTarget(ClientCard attacker, IList<ClientCard> defenders)
         {
-            // Si el enemigo tiene muchas cartas seteadas, solo atacar con el más fuerte
-            if (Enemy.GetSpellCountWithoutField() >= 3 && attacker.Attack < 2500)
+            // Si el rival tiene mucho Backrow (3+ cartas), Yusei ataca con cautela (Escenario A)
+            if (Enemy.GetSpellCountWithoutField() >= 3 && attacker.Attack < 2000)
             {
-                return null; // Detener este ataque específico
+                // Si el atacante no es el más fuerte, mejor no arriesgar
+                if (attacker != Bot.MonsterZone.GetHighestAttackMonster())
+                    return null;
             }
+            return base.OnSelectAttackTarget(attacker, defenders);
+        }
 
-            // Atacar al más débil primero (Lógica de eficiencia)
-            var sortedDefenders = defenders.OrderBy(d => d.Attack).ToList();
-            return base.OnSelectAttackTarget(attacker, sortedDefenders);
+        // Manejo de efectos de selección (Inspirado en Swordsoul)
+        public override bool OnSelectCard(IList<ClientCard> cards, int min, int max, int hint, bool cancelable)
+        {
+            // Priorizar siempre proteger a Stardust Dragon de efectos de coste propios
+            if (hint == HintMsg.Release || hint == HintMsg.Tribute)
+            {
+                var targets = cards.Where(c => !c.IsCode(CardId.StardustDragon)).ToList();
+                if (targets.Count >= min) return base.OnSelectCard(targets, min, max, hint, cancelable);
+            }
+            return base.OnSelectCard(cards, min, max, hint, cancelable);
         }
     }
 }
