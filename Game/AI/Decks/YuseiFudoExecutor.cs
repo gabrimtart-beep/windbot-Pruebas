@@ -13,86 +13,133 @@ namespace WindBot.Game.AI.Decks
     {
         public class CardId
         {
-            public const int StardustDragon = 44508094;
-            public const int ShootingStarDragon = 24696097;
-            public const int JunkSynchron = 63977066;
-            public const int JunkWarrior = 60800381;
-            public const int QuillboltHedgehog = 23574823;
+            public const int JunkSynchron = 63977008;
             public const int Doppelwarrior = 53855409;
-            public const int JetSynchron = 9742784;
-            public const int Tuning = 63180001;
-            public const int ScrapIronScarecrow = 35346668;
+            public const int JunkWarrior = 60800381;
+            public const int ArriveInLight = 365213;
+            public const int QuickdrawSynchron = 20932152;
+            public const int JunkAnchor = 96182448;
+            public const int GravityWarrior = 44035031;
+            public const int StardustDragon = 44508094;
+            public const int Tuning = 96363153;
+            public const int StarlightRoad = 58120309;
+            public const int ScrapIronScarecrow = 98427577;
             public const int EffectVeiler = 97268402;
-            public const int StarlightRoad = 58120400;
         }
 
         public YuseiFudoExecutor(GameAI ai, Duel duel)
             : base(ai, duel)
         {
-            // 1. Interrupciones y Buscadores
+            // --- 1. REACCIONES Y TRAMPAS (Prioridad de Activación) ---
+            AddExecutor(ExecutorType.Activate, CardId.StarlightRoad);
+            AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, () => Duel.Phase == DuelPhase.Battle);
             AddExecutor(ExecutorType.Activate, CardId.EffectVeiler, DefaultEffectVeiler);
-            AddExecutor(ExecutorType.Activate, CardId.Tuning);
+            AddExecutor(ExecutorType.Activate, CardId.ArriveInLight, ArriveInLightLogic);
 
-            // 2. Extra Deck - Sincronía
-            AddExecutor(ExecutorType.SpSummon, CardId.ShootingStarDragon);
+            // --- 2. BUSCADORES ---
+            AddExecutor(ExecutorType.Activate, CardId.Tuning, TuningLogic);
+
+            // --- 3. INVOCACIONES ESPECIALES (Combos) ---
+            AddExecutor(ExecutorType.SpSummon, CardId.QuickdrawSynchron, QuickdrawSynchronLogic);
+            AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior, JunkWarriorComboLogic);
+            AddExecutor(ExecutorType.SpSummon, CardId.GravityWarrior, () => Enemy.GetMonsterCount() >= 3);
             AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon);
-            AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
+            AddExecutor(ExecutorType.Activate, CardId.Doppelwarrior); // Activar tokens
 
-            // 3. Reglas de Invocación de Monstruos
-            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, JunkSynchronLogic);
-            AddExecutor(ExecutorType.Summon, CardId.Doppelwarrior);
-            AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
-            AddExecutor(ExecutorType.Summon); // Invocación genérica por si acaso
+            // --- 4. INVOCACIONES NORMALES ---
+            // Regla Veiler: No invocar ni colocar
+            AddExecutor(ExecutorType.Summon, CardId.EffectVeiler, () => false);
+            AddExecutor(ExecutorType.MonsterSet, CardId.EffectVeiler, () => false);
+
+            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, JunkSynchronNormalSummon);
+            AddExecutor(ExecutorType.Summon, CardId.Doppelwarrior, () => Bot.HasInMonstersZone(CardId.JunkSynchron));
             
-            AddExecutor(ExecutorType.MonsterSet, () => 
-                Enemy.GetMonsterCount() > 0 && Util.IsOneEnemyBetterThanValue(1800, false));
+            // Invocación inteligente genérica
+            AddExecutor(ExecutorType.Summon, SmartSummonLogic);
+            AddExecutor(ExecutorType.MonsterSet, () => !HasTunerInField());
 
-            // 4. Magias y Trampas
-            AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, ScarecrowLogic);
-            AddExecutor(ExecutorType.SpellSet, CardId.ScrapIronScarecrow, TrapSetLogic);
-            AddExecutor(ExecutorType.SpellSet, CardId.StarlightRoad, TrapSetLogic);
+            // --- 5. OTROS ---
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
-
-            // 5. Reposición de posición
-            AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
+            AddExecutor(ExecutorType.Repos, MonsterReposLogic);
         }
 
-        private bool JunkSynchronLogic()
+        private bool TuningLogic()
         {
-            // Selecciona un monstruo de nivel bajo en el cementerio para el efecto de Junk Synchron
-            ClientCard target = Bot.Graveyard.FirstOrDefault(c => c.Level <= 2);
-            if (target != null)
+            // Activar automáticamente si no hay Tuners en mano
+            bool hasTunerInHand = Bot.Hand.Any(c => c != null && c.HasType(CardType.Tuner));
+            return !hasTunerInHand;
+        }
+
+        private bool ArriveInLightLogic()
+        {
+            if (Card.Location == CardLocation.Hand) return true;
+            bool hasTunerInHand = Bot.Hand.Any(c => c != null && c.HasType(CardType.Tuner));
+            AI.SelectOption(hasTunerInHand ? 1 : 0);
+            return true;
+        }
+
+        private bool QuickdrawSynchronLogic()
+        {
+            ClientCard discardTarget = Bot.Hand.FirstOrDefault(c => c.IsCode(CardId.JunkAnchor)) 
+                                      ?? Bot.Hand.FirstOrDefault(c => c.HasType(CardType.Tuner) && c.Level <= 3);
+            if (discardTarget != null)
             {
-                AI.SelectCard(target);
+                AI.SelectCard(discardTarget);
+                AI.SelectPosition(CardPosition.FaceUpDefence);
                 return true;
+            }
+            return false;
+        }
+
+        private bool JunkWarriorComboLogic()
+        {
+            if (Bot.HasInMonstersZone(CardId.JunkSynchron) && Bot.HasInMonstersZone(CardId.Doppelwarrior))
+            {
+                AI.SelectMaterials(new[] { CardId.JunkSynchron, CardId.Doppelwarrior });
+                return true;
+            }
+            return false;
+        }
+
+        private bool JunkSynchronNormalSummon()
+        {
+            return Bot.HasInHand(CardId.Doppelwarrior) || Bot.HasInGraveyard(CardId.Doppelwarrior) || Bot.Graveyard.Any(c => c.Level <= 2);
+        }
+
+        private bool SmartSummonLogic()
+        {
+            // Evitar invocar Effect Veiler (doble chequeo)
+            if (Card.IsCode(CardId.EffectVeiler)) return false;
+
+            if (Util.IsOneEnemyBetterThanValue(Card.Attack, false))
+            {
+                return HasTunerInField() || Bot.Hand.Any(c => c.HasType(CardType.Tuner));
             }
             return true;
         }
 
-        private bool ScarecrowLogic()
+        private bool MonsterReposLogic()
         {
-            return Duel.Player == 1 && Duel.Phase == DuelPhase.Battle;
+            if (Card.IsAttack() && Util.IsOneEnemyBetterThanValue(Card.Attack, true))
+                return true;
+            return false;
         }
 
-        private bool TrapSetLogic()
+        private bool HasTunerInField()
         {
-            if (Bot.GetSpellCountWithoutField() >= 4) return false;
-            // Evita la zona central para mayor seguridad contra efectos de columna
-            AI.SelectPlace(Zones.z0 | Zones.z1 | Zones.z3 | Zones.z4);
-            return true;
+            return Bot.MonsterZone.Any(c => c != null && c.HasType(CardType.Tuner));
         }
-
-        // Se eliminó OnSelectCard para evitar el error CS0115.
-        // La lógica de "no tributar ases" ahora se maneja automáticamente 
-        // por la prioridad del DefaultExecutor al no añadirlos como materiales 
-        // preferentes en los otros métodos.
 
         public override BattlePhaseAction OnSelectAttackTarget(ClientCard attacker, IList<ClientCard> defenders)
         {
-            // Si el atacante es débil y hay muchas cartas seteadas, ser precavido
-            if (Enemy.GetSpellCountWithoutField() >= 2 && attacker.Attack < 2000)
-                return null;
-            
+            if (attacker.IsCode(CardId.JunkWarrior))
+            {
+                ClientCard strongestEnemy = Enemy.MonsterZone.GetHighestAttackMonster();
+                if (strongestEnemy != null && attacker.Attack > strongestEnemy.Attack)
+                {
+                    return AI.Attack(attacker, strongestEnemy);
+                }
+            }
             return base.OnSelectAttackTarget(attacker, defenders);
         }
     }
