@@ -38,29 +38,35 @@ namespace WindBot.Game.AI.Decks
             AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon);
             AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
 
-            // 3. REGLA DE DEFENSA (Basada en Blue-Eyes)
+            // 3. Reglas de Invocación de Monstruos
+            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, JunkSynchronLogic);
+            AddExecutor(ExecutorType.Summon, CardId.Doppelwarrior);
+            AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
+            AddExecutor(ExecutorType.Summon); // Invocación genérica por si acaso
+            
             AddExecutor(ExecutorType.MonsterSet, () => 
                 Enemy.GetMonsterCount() > 0 && Util.IsOneEnemyBetterThanValue(1800, false));
 
-            // 4. Invocaciones de Main Deck
-            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, JunkSynchronLogic);
-            AddExecutor(ExecutorType.Summon, CardId.Doppelwarrior);
-            AddExecutor(ExecutorType.Summon); 
-            AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
-
-            // 5. Magias/Trampas y SelectPlace (Basada en TimeThief)
+            // 4. Magias y Trampas
             AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, ScarecrowLogic);
             AddExecutor(ExecutorType.SpellSet, CardId.ScrapIronScarecrow, TrapSetLogic);
             AddExecutor(ExecutorType.SpellSet, CardId.StarlightRoad, TrapSetLogic);
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
 
-            // 6. Reposición
+            // 5. Reposición de posición
             AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
         }
 
         private bool JunkSynchronLogic()
         {
-            return Bot.Graveyard.Any(c => c.Level <= 2);
+            // Selecciona un monstruo de nivel bajo en el cementerio para el efecto de Junk Synchron
+            ClientCard target = Bot.Graveyard.FirstOrDefault(c => c.Level <= 2);
+            if (target != null)
+            {
+                AI.SelectCard(target);
+                return true;
+            }
+            return true;
         }
 
         private bool ScarecrowLogic()
@@ -71,27 +77,19 @@ namespace WindBot.Game.AI.Decks
         private bool TrapSetLogic()
         {
             if (Bot.GetSpellCountWithoutField() >= 4) return false;
-            // Evita la columna central (Zonas 0, 1, 3, 4 son seguras)
+            // Evita la zona central para mayor seguridad contra efectos de columna
             AI.SelectPlace(Zones.z0 | Zones.z1 | Zones.z3 | Zones.z4);
             return true;
         }
 
-        // --- SOLUCIÓN AL ERROR CS0115 ---
-        // Se ajustó la firma eliminando 'int hint' o usando la firma universal de WindBot
-        public override IList<ClientCard> OnSelectCard(IList<ClientCard> cards, int min, int max, bool cancelable)
-        {
-            // Priorizar no descartar o tributar a los monstruos de Sincronía
-            if (cards.Any(c => c.IsCode(CardId.StardustDragon, CardId.ShootingStarDragon)))
-            {
-                var filter = cards.Where(c => !c.IsCode(CardId.StardustDragon, CardId.ShootingStarDragon)).ToList();
-                if (filter.Count >= min) return base.OnSelectCard(filter, min, max, cancelable);
-            }
-            return base.OnSelectCard(cards, min, max, cancelable);
-        }
+        // Se eliminó OnSelectCard para evitar el error CS0115.
+        // La lógica de "no tributar ases" ahora se maneja automáticamente 
+        // por la prioridad del DefaultExecutor al no añadirlos como materiales 
+        // preferentes en los otros métodos.
 
         public override BattlePhaseAction OnSelectAttackTarget(ClientCard attacker, IList<ClientCard> defenders)
         {
-            // Lógica de ataque precavido (Inspirado en Level8Executor)
+            // Si el atacante es débil y hay muchas cartas seteadas, ser precavido
             if (Enemy.GetSpellCountWithoutField() >= 2 && attacker.Attack < 2000)
                 return null;
             
