@@ -8,7 +8,7 @@ using YGOSharp.OCGWrapper.Enums;
 
 namespace WindBot.Game.AI.Decks
 {
-    [Deck("LogicalYusei", "AI_Adaptive_Sincro")]
+    [Deck("LogicalYusei", "AI_Yusei")]
     public class YuseiFudoExecutor : DefaultExecutor
     {
         public class CardId
