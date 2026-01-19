@@ -8,115 +8,94 @@ using YGOSharp.OCGWrapper.Enums;
 
 namespace WindBot.Game.AI.Decks
 {
-    [Deck("LogicalSynchro", "AI_Synchro_Architect_v1")]
-    public class SynchroArchitectExecutor : DefaultExecutor
+    [Deck("LogicalYusei", "AI_Adaptive_Sincro")]
+    public class YuseiFudoExecutor : DefaultExecutor
     {
-        // Memoria de Duelo: Registra amenazas y patrones del rival
-        private static HashSet<int> OpponentThreats = new HashSet<int>();
-        private int TurnCount = 0;
+        public class CardId
+        {
+            public const int JunkSynchron = 63977008;
+            public const int QuickdrawSynchron = 20932152;
+            public const int UnknownSynchron = 15310033;
+            public const int JetSynchron = 9742784;
+            public const int Tuning = 96363153;
+            public const int QuillboltHedgehog = 23571046;
+            public const int StardustDragon = 44508094;
+            public const int JunkWarrior = 60800381;
+            public const int ShieldWing = 17201951;
+        }
 
-        public SynchroArchitectExecutor(GameAI ai, Duel duel)
+        public YuseiFudoExecutor(GameAI ai, Duel duel)
             : base(ai, duel)
         {
-            // --- MOTOR DE DESCUBRIMIENTO DE COMBOS ---
-            // El bot buscará jugadas en este orden de prioridad lógica:
-            
-            // 1. BUSCADORES (Preparar la mano)
-            AddExecutor(ExecutorType.Activate, c => c.HasCategory(CardCategory.Search) || c.HasCategory(CardCategory.Draw));
+            // --- FASE 1: PREPARACIÓN INTELECTUAL (Buscadores) ---
+            AddExecutor(ExecutorType.Activate, CardId.Tuning);
 
-            // 2. EXTENSORES (Invocar de modo especial si ayuda a subir el nivel del campo)
-            AddExecutor(ExecutorType.SpSummon, Discovery_SpecialSummonLogic);
+            // --- FASE 2: CÁLCULO DE POSIBILIDADES (Invocaciones Especiales) ---
+            AddExecutor(ExecutorType.SpSummon, CardId.QuickdrawSynchron, QuickdrawLogic);
+            AddExecutor(ExecutorType.SpSummon, CardId.UnknownSynchron);
+            AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
 
-            // 3. SINCRONÍA DINÁMICA (El bot "mira" el Extra Deck y calcula si puede invocar algo)
-            AddExecutor(ExecutorType.SpSummon, Discovery_SynchroDiscovery);
+            // --- FASE 3: EJECUCIÓN DE COMBOS DINÁMICOS (Extra Deck) ---
+            // El bot invocará del Extra Deck si el ATK resultante ayuda a ganar o superar al rival
+            AddExecutor(ExecutorType.SpSummon, () => {
+                int enemyMaxAtk = Enemy.MonsterZone.Where(c => c != null && c.IsFaceup()).Max(c => (int?)c.Attack) ?? 0;
+                return Card.Attack > enemyMaxAtk || Bot.LifePoints < 3000;
+            });
 
-            // 4. INVOCACIÓN NORMAL TÁCTICA
-            AddExecutor(ExecutorType.Summon, Discovery_NormalSummonLogic);
+            // --- FASE 4: LÓGICA DE INVOCACIÓN NORMAL ADAPTATIVA ---
+            // 1. Combo principal si el cementerio está listo
+            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, () => Bot.Graveyard.Any(c => c.Level <= 2));
 
-            // 5. REACCIÓN INTELIGENTE
-            AddExecutor(ExecutorType.Activate, Discovery_SmartActivation);
+            // 2. Lógica de "Parejas": Si tengo un Tuner, busco un No-Tuner y viceversa
+            AddExecutor(ExecutorType.Summon, () => {
+                bool hasTuner = Bot.MonsterZone.Any(m => m != null && m.IsFaceup() && m.HasType(CardType.Tuner));
+                bool hasNonTuner = Bot.MonsterZone.Any(m => m != null && m.IsFaceup() && !m.HasType(CardType.Tuner));
+                
+                if (hasTuner && !Card.HasType(CardType.Tuner)) return true; // Completar pareja para Sincro
+                if (hasNonTuner && Card.HasType(CardType.Tuner)) return true; // Completar pareja para Sincro
+                
+                // Si el campo está vacío, no "pasar turno". Invocar para defender.
+                return Bot.GetMonsterCount() == 0;
+            });
 
+            // 3. Supervivencia: Shield Wing si el riesgo es alto
+            AddExecutor(ExecutorType.Summon, CardId.ShieldWing, () => Bot.GetMonsterCount() == 0 || Enemy.GetMonsterCount() > 1);
+            AddExecutor(ExecutorType.MonsterSet, CardId.ShieldWing, () => Bot.GetMonsterCount() == 0);
+
+            // --- FASE 5: REACCIÓN Y MAGIAS ---
+            AddExecutor(ExecutorType.Activate, GenericSmartActivation);
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
             AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
         }
 
-        // --- LÓGICA: DESCUBRIMIENTO DE SINCRONÍA ---
-        private bool Discovery_SynchroDiscovery()
+        private bool QuickdrawLogic()
         {
-            // El bot analiza qué niveles tiene en el campo
-            var fieldLevels = Bot.MonsterZone.Where(c => c != null && c.IsFaceup()).Select(c => c.Level).ToList();
+            // El bot "razona" que solo debe bajar a Quickdraw si tiene algo útil que descartar
+            return Bot.Hand.Any(c => c.IsCode(CardId.QuillboltHedgehog, CardId.JetSynchron));
+        }
+
+        private bool GenericSmartActivation()
+        {
+            // Lógica de activación basada en el estado del duelo
+            // Si es un efecto de robo, siempre es bueno
+            if (Card.Id == 67169062) return Bot.Graveyard.Count >= 5; // Pot of Avarice
             
-            // Si tiene un Cantante y un No-Cantante, busca en el Extra Deck qué puede invocar
-            if (Bot.MonsterZone.Any(c => c != null && c.HasType(CardType.Tuner)))
-            {
-                // El motor de WindBot ya intenta emparejar niveles, 
-                // pero aquí le damos prioridad si el resultado es un monstruo de "Capa Alta" (Nivel 7+)
-                return Card.Level >= 7 || (Card.Attack > Enemy.MonsterZone.GetHighestAttackMonster()?.Attack ?? 0);
-            }
-            return false;
-        }
-
-        // --- LÓGICA: INVOCACIÓN NORMAL POR POSIBILIDADES ---
-        private bool Discovery_NormalSummonLogic()
-        {
-            // REGLA DE APRENDIZAJE: Si el oponente ha usado "Effect Veiler" o "Ash Blossom" (basado en memoria)
-            // el bot esperará a tener un "Cebo" antes de bajar su carta principal.
-            bool isOpponentDangerous = OpponentThreats.Any();
-
-            // Si no hay monstruos, invocar para no perder presencia (Lógica de Supervivencia)
-            if (Bot.GetMonsterCount() == 0) return true;
-
-            // ANALIZAR POSIBILIDADES:
-            // ¿Tengo un Cantante en campo? Entonces invoco un No-Cantante de la mano para abrir un Combo.
-            if (HasTunerInField() && !Card.HasType(CardType.Tuner)) return true;
-
-            // ¿Tengo un No-Cantante? Invoco un Cantante.
-            if (HasNonTunerInField() && Card.HasType(CardType.Tuner)) return true;
-
-            // Si el monstruo en mano tiene un ATK mayor al mejor del rival, contraatacar.
-            if (Card.Attack > (Enemy.MonsterZone.GetHighestAttackMonster()?.Attack ?? 0)) return true;
-
-            return false;
-        }
-
-        // --- LÓGICA: ACTIVACIÓN BASADA EN VALOR ---
-        private bool Discovery_SmartActivation()
-        {
-            // Guardar en memoria lo que el oponente hace para "aprender" sus cartas
-            if (Duel.Player == 1)
-            {
-                OpponentThreats.Add(Card.Id);
-            }
-
-            // ¿Es una carta de interrupción? (Negación/Destrucción)
-            if (Card.IsSpellNegate() || Card.IsMonsterNegate() || Card.HasCategory(CardCategory.Destroy))
-            {
-                // Solo activarla si el objetivo del rival es "Valioso" (ATK > 2000 o Efecto de búsqueda)
-                ClientCard target = Duel.ChainTargets.LastOrDefault();
-                if (target != null && target.Attack < 1500 && Bot.LifePoints > 2000) return false;
-            }
+            // Si el efecto destruye cartas, solo usarlo si el rival tiene monstruos fuertes
+            int enemyMaxAtk = Enemy.MonsterZone.Where(c => c != null && c.IsFaceup()).Max(c => (int?)c.Attack) ?? 0;
+            if (enemyMaxAtk > 2000) return true;
 
             return true;
         }
 
-        private bool Discovery_SpecialSummonLogic()
+        public override BattlePhaseAction OnSelectAttackTarget(ClientCard attacker, IList<ClientCard> defenders)
         {
-            // Si la invocación especial NO gasta recursos valiosos y aumenta el número de monstruos, hacerlo.
-            // Esto permite que el bot "descubra" que puede usar a Quillbolt Hedgehog o Jet Synchron
-            // para completar niveles que le faltan para una Sincronía.
-            if (Bot.GetMonsterCount() < 4) return true;
-
-            return false;
-        }
-
-        // --- AYUDAS TÉCNICAS ---
-        private bool HasTunerInField() => Bot.MonsterZone.Any(c => c != null && c.IsFaceup() && c.HasType(CardType.Tuner));
-        private bool HasNonTunerInField() => Bot.MonsterZone.Any(c => c != null && c.IsFaceup() && !c.HasType(CardType.Tuner));
-        
-        public override void OnNewTurn()
-        {
-            TurnCount++;
-            base.OnNewTurn();
+            // El bot prioriza destruir Cantantes (Tuners) del rival para evitar que el rival haga Sincro
+            foreach (ClientCard defender in defenders)
+            {
+                if (defender.HasType(CardType.Tuner) && attacker.Attack > defender.Attack)
+                    return AI.Attack(attacker, defender);
+            }
+            return base.OnSelectAttackTarget(attacker, defenders);
         }
     }
 }
