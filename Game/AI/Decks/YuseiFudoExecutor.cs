@@ -8,124 +8,115 @@ using YGOSharp.OCGWrapper.Enums;
 
 namespace WindBot.Game.AI.Decks
 {
-    [Deck("YuseiFudo", "AI_Yusei")]
-    public class YuseiFudoExecutor : DefaultExecutor
+    [Deck("LogicalSynchro", "AI_Synchro_Architect_v1")]
+    public class SynchroArchitectExecutor : DefaultExecutor
     {
-        public class CardId
-        {
-            // Cantantes (Tuners)
-            public const int JunkSynchron = 63977008;
-            public const int QuickdrawSynchron = 20932152;
-            public const int UnknownSynchron = 15310033;
-            public const int JetSynchron = 9742784;
-            public const int MajesticDragon = 21159309;
-            public const int EffectVeiler = 97268402;
-            public const int EffectVeiler2 = 97268403;
-            public const int FormulaSynchron = 50091196;
+        // Memoria de Duelo: Registra amenazas y patrones del rival
+        private static HashSet<int> OpponentThreats = new HashSet<int>();
+        private int TurnCount = 0;
 
-            // No-Cantantes (Materiales y Efectos)
-            public const int Doppelwarrior = 53855409;
-            public const int QuillboltHedgehog = 23571046;
-            public const int QuillboltHedgehog2 = 23571046;
-            public const int ClearEffector = 58518520;
-            public const int RushWarrior = 36736723;
-            public const int NecroDefender = 77700347;
-            public const int SynchronExplorer = 36643046;
-            public const int BrightStarDragon = 16719802;
-            public const int JunkAnchor = 25148255;
-            public const int ShieldWing = 17201951; 
-
-            // Magias
-            public const int Tuning = 96363153; 
-            public const int SynchroChase = 23442438;
-            public const int OneForOne = 02295440;
-            public const int PotOfAvarice = 67169062;
-            public const int MonsterReborn = 83764718;
-            public const int LevelLifter = 37198732;
-
-            // Trampas
-            public const int TimeMachine = 80987696;
-            public const int Waboku = 12607053;
-            public const int ShootingStar = 47264717;
-            public const int SynchroTransmission = 35817848; 
-            public const int PhysicalDouble = 63442604;
-            public const int BoneTempleBlock = 47778083;
-            public const int DeepDarkTrapHole = 28654932;
-            public const int StarlightRoad = 58120309;
-            public const int ScrapIronScarecrow = 98427577;
-            public const int SynchroFellowship = 43834302;
-
-            // Extra Deck
-            public const int ShootingQuasarDragon = 35952884;
-            public const int ShootingStarDragon = 24696097;
-            public const int TGHyperLibrarian = 90953320;
-            public const int StardustDragon = 44508094;
-            public const int JunkWarrior = 60800381;
-            public const int ArcherSynchron = 42810973;
-            public const int JetWarrior = 00286392;
-        }
-
-        public YuseiFudoExecutor(GameAI ai, Duel duel)
+        public SynchroArchitectExecutor(GameAI ai, Duel duel)
             : base(ai, duel)
         {
-            AddExecutor(ExecutorType.Activate, CardId.Tuning);
-            AddExecutor(ExecutorType.Activate, CardId.OneForOne, OneForOneLogic);
-            AddExecutor(ExecutorType.Activate, CardId.MonsterReborn, MonsterRebornLogic);
-            AddExecutor(ExecutorType.Activate, CardId.SynchroChase);
-
-            AddExecutor(ExecutorType.SpSummon, CardId.QuickdrawSynchron, QuickdrawLogic);
-            AddExecutor(ExecutorType.SpSummon, CardId.UnknownSynchron);
-            AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
-            AddExecutor(ExecutorType.Activate, CardId.JetSynchron, () => Bot.Hand.Count > 0);
-
-            AddExecutor(ExecutorType.SpSummon, CardId.TGHyperLibrarian, () => Bot.GetMonsterCount() <= 3);
-            AddExecutor(ExecutorType.SpSummon, CardId.ShootingQuasarDragon);
-            AddExecutor(ExecutorType.SpSummon, CardId.ShootingStarDragon);
-            AddExecutor(ExecutorType.SpSummon, CardId.StardustDragon);
-            AddExecutor(ExecutorType.SpSummon, CardId.JetWarrior);
-            AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
-            AddExecutor(ExecutorType.SpSummon, CardId.FormulaSynchron);
-
-            AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, () => Bot.Graveyard.Any(c => c.Level <= 2));
-            AddExecutor(ExecutorType.Summon, () => HasTunerInField() && Bot.Hand.Any(c => !c.HasType(CardType.Tuner)));
-            AddExecutor(ExecutorType.Summon, () => HasNonTunerInField() && Bot.Hand.Any(c => c.HasType(CardType.Tuner)));
-
-            AddExecutor(ExecutorType.Summon, CardId.ShieldWing, () => Bot.GetMonsterCount() == 0);
-            AddExecutor(ExecutorType.Summon, () => Bot.GetMonsterCount() == 0);
-            AddExecutor(ExecutorType.MonsterSet, () => Bot.GetMonsterCount() == 0);
-
-            AddExecutor(ExecutorType.Activate, CardId.StarlightRoad, () => Duel.ChainTargets.Count >= 2);
-            AddExecutor(ExecutorType.Activate, CardId.Waboku, () => Duel.Player == 1 && Duel.Phase == DuelPhase.Battle);
-            AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, () => Duel.Phase == DuelPhase.Battle);
-            AddExecutor(ExecutorType.Activate, CardId.DeepDarkTrapHole);
+            // --- MOTOR DE DESCUBRIMIENTO DE COMBOS ---
+            // El bot buscará jugadas en este orden de prioridad lógica:
             
-            AddExecutor(ExecutorType.Activate, CardId.PotOfAvarice, () => Bot.Graveyard.Count >= 5);
+            // 1. BUSCADORES (Preparar la mano)
+            AddExecutor(ExecutorType.Activate, c => c.HasCategory(CardCategory.Search) || c.HasCategory(CardCategory.Draw));
+
+            // 2. EXTENSORES (Invocar de modo especial si ayuda a subir el nivel del campo)
+            AddExecutor(ExecutorType.SpSummon, Discovery_SpecialSummonLogic);
+
+            // 3. SINCRONÍA DINÁMICA (El bot "mira" el Extra Deck y calcula si puede invocar algo)
+            AddExecutor(ExecutorType.SpSummon, Discovery_SynchroDiscovery);
+
+            // 4. INVOCACIÓN NORMAL TÁCTICA
+            AddExecutor(ExecutorType.Summon, Discovery_NormalSummonLogic);
+
+            // 5. REACCIÓN INTELIGENTE
+            AddExecutor(ExecutorType.Activate, Discovery_SmartActivation);
+
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
             AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
         }
 
-        private bool QuickdrawLogic()
+        // --- LÓGICA: DESCUBRIMIENTO DE SINCRONÍA ---
+        private bool Discovery_SynchroDiscovery()
         {
-            ClientCard discard = Bot.Hand.FirstOrDefault(c => c.IsCode(CardId.QuillboltHedgehog, CardId.JetSynchron, CardId.Doppelwarrior, CardId.NecroDefender));
-            if (discard != null) { AI.SelectCard(discard); return true; }
-            return Bot.GetMonsterCount() == 0;
-        }
-
-        private bool OneForOneLogic()
-        {
-            ClientCard cost = Bot.Hand.FirstOrDefault(c => c.IsMonster());
-            if (cost != null) { AI.SelectCard(cost); AI.SelectNextCard(CardId.JetSynchron); return true; }
+            // El bot analiza qué niveles tiene en el campo
+            var fieldLevels = Bot.MonsterZone.Where(c => c != null && c.IsFaceup()).Select(c => c.Level).ToList();
+            
+            // Si tiene un Cantante y un No-Cantante, busca en el Extra Deck qué puede invocar
+            if (Bot.MonsterZone.Any(c => c != null && c.HasType(CardType.Tuner)))
+            {
+                // El motor de WindBot ya intenta emparejar niveles, 
+                // pero aquí le damos prioridad si el resultado es un monstruo de "Capa Alta" (Nivel 7+)
+                return Card.Level >= 7 || (Card.Attack > Enemy.MonsterZone.GetHighestAttackMonster()?.Attack ?? 0);
+            }
             return false;
         }
 
-        private bool MonsterRebornLogic()
+        // --- LÓGICA: INVOCACIÓN NORMAL POR POSIBILIDADES ---
+        private bool Discovery_NormalSummonLogic()
         {
-            if (Bot.HasInGraveyard(CardId.JunkSynchron)) { AI.SelectCard(CardId.JunkSynchron); return true; }
+            // REGLA DE APRENDIZAJE: Si el oponente ha usado "Effect Veiler" o "Ash Blossom" (basado en memoria)
+            // el bot esperará a tener un "Cebo" antes de bajar su carta principal.
+            bool isOpponentDangerous = OpponentThreats.Any();
+
+            // Si no hay monstruos, invocar para no perder presencia (Lógica de Supervivencia)
+            if (Bot.GetMonsterCount() == 0) return true;
+
+            // ANALIZAR POSIBILIDADES:
+            // ¿Tengo un Cantante en campo? Entonces invoco un No-Cantante de la mano para abrir un Combo.
+            if (HasTunerInField() && !Card.HasType(CardType.Tuner)) return true;
+
+            // ¿Tengo un No-Cantante? Invoco un Cantante.
+            if (HasNonTunerInField() && Card.HasType(CardType.Tuner)) return true;
+
+            // Si el monstruo en mano tiene un ATK mayor al mejor del rival, contraatacar.
+            if (Card.Attack > (Enemy.MonsterZone.GetHighestAttackMonster()?.Attack ?? 0)) return true;
+
             return false;
         }
 
-        // --- CORRECCIÓN CRÍTICA DE COMPILACIÓN ---
+        // --- LÓGICA: ACTIVACIÓN BASADA EN VALOR ---
+        private bool Discovery_SmartActivation()
+        {
+            // Guardar en memoria lo que el oponente hace para "aprender" sus cartas
+            if (Duel.Player == 1)
+            {
+                OpponentThreats.Add(Card.Id);
+            }
+
+            // ¿Es una carta de interrupción? (Negación/Destrucción)
+            if (Card.IsSpellNegate() || Card.IsMonsterNegate() || Card.HasCategory(CardCategory.Destroy))
+            {
+                // Solo activarla si el objetivo del rival es "Valioso" (ATK > 2000 o Efecto de búsqueda)
+                ClientCard target = Duel.ChainTargets.LastOrDefault();
+                if (target != null && target.Attack < 1500 && Bot.LifePoints > 2000) return false;
+            }
+
+            return true;
+        }
+
+        private bool Discovery_SpecialSummonLogic()
+        {
+            // Si la invocación especial NO gasta recursos valiosos y aumenta el número de monstruos, hacerlo.
+            // Esto permite que el bot "descubra" que puede usar a Quillbolt Hedgehog o Jet Synchron
+            // para completar niveles que le faltan para una Sincronía.
+            if (Bot.GetMonsterCount() < 4) return true;
+
+            return false;
+        }
+
+        // --- AYUDAS TÉCNICAS ---
         private bool HasTunerInField() => Bot.MonsterZone.Any(c => c != null && c.IsFaceup() && c.HasType(CardType.Tuner));
         private bool HasNonTunerInField() => Bot.MonsterZone.Any(c => c != null && c.IsFaceup() && !c.HasType(CardType.Tuner));
+        
+        public override void OnNewTurn()
+        {
+            TurnCount++;
+            base.OnNewTurn();
+        }
     }
 }
