@@ -8,7 +8,7 @@ using YGOSharp.OCGWrapper.Enums;
 
 namespace WindBot.Game.AI.Decks
 {
-    [Deck("YuseiFudo", "AI_Yusei")]
+    [Deck("YuseiFudo", "AI_Yusei_Fixed_Compile")]
     public class YuseiFudoExecutor : DefaultExecutor
     {
         public class CardId
@@ -68,19 +68,16 @@ namespace WindBot.Game.AI.Decks
         public YuseiFudoExecutor(GameAI ai, Duel duel)
             : base(ai, duel)
         {
-            // --- 1. MAGIAS DE BÚSQUEDA Y RECURSOS ---
             AddExecutor(ExecutorType.Activate, CardId.Tuning);
             AddExecutor(ExecutorType.Activate, CardId.OneForOne, OneForOneLogic);
             AddExecutor(ExecutorType.Activate, CardId.MonsterReborn, MonsterRebornLogic);
             AddExecutor(ExecutorType.Activate, CardId.SynchroChase);
 
-            // --- 2. INVOCACIONES ESPECIALES (PREPARAR CAMPO) ---
             AddExecutor(ExecutorType.SpSummon, CardId.QuickdrawSynchron, QuickdrawLogic);
             AddExecutor(ExecutorType.SpSummon, CardId.UnknownSynchron);
             AddExecutor(ExecutorType.SpSummon, CardId.QuillboltHedgehog);
             AddExecutor(ExecutorType.Activate, CardId.JetSynchron, () => Bot.Hand.Count > 0);
 
-            // --- 3. SINCRONÍA (ORDEN DE PRIORIDAD) ---
             AddExecutor(ExecutorType.SpSummon, CardId.TGHyperLibrarian, () => Bot.GetMonsterCount() <= 3);
             AddExecutor(ExecutorType.SpSummon, CardId.ShootingQuasarDragon);
             AddExecutor(ExecutorType.SpSummon, CardId.ShootingStarDragon);
@@ -89,38 +86,26 @@ namespace WindBot.Game.AI.Decks
             AddExecutor(ExecutorType.SpSummon, CardId.JunkWarrior);
             AddExecutor(ExecutorType.SpSummon, CardId.FormulaSynchron);
 
-            // --- 4. INVOCACIÓN NORMAL (LÓGICA PROACTIVA) ---
-            // Invocar Junk Synchron si hay algo que revivir (Combo principal)
             AddExecutor(ExecutorType.Summon, CardId.JunkSynchron, () => Bot.Graveyard.Any(c => c.Level <= 2));
-            
-            // SI HAY UN TUNER: Invocar cualquier No-Tuner para sincronizar YA
             AddExecutor(ExecutorType.Summon, () => HasTunerInField() && Bot.Hand.Any(c => !c.HasType(CardType.Tuner)));
-
-            // SI HAY UN NO-TUNER: Invocar un Tuner para sincronizar YA
             AddExecutor(ExecutorType.Summon, () => HasNonTunerInField() && Bot.Hand.Any(c => c.HasType(CardType.Tuner)));
 
-            // SI EL CAMPO ESTÁ VACÍO: No pasar turno, poner presencia
             AddExecutor(ExecutorType.Summon, CardId.ShieldWing, () => Bot.GetMonsterCount() == 0);
             AddExecutor(ExecutorType.Summon, () => Bot.GetMonsterCount() == 0);
             AddExecutor(ExecutorType.MonsterSet, () => Bot.GetMonsterCount() == 0);
 
-            // --- 5. TRAMPAS Y REACCIONES ---
             AddExecutor(ExecutorType.Activate, CardId.StarlightRoad, () => Duel.ChainTargets.Count >= 2);
             AddExecutor(ExecutorType.Activate, CardId.Waboku, () => Duel.Player == 1 && Duel.Phase == DuelPhase.Battle);
             AddExecutor(ExecutorType.Activate, CardId.ScrapIronScarecrow, () => Duel.Phase == DuelPhase.Battle);
             AddExecutor(ExecutorType.Activate, CardId.DeepDarkTrapHole);
             
-            // --- 6. RECICLAJE Y REPOSO ---
             AddExecutor(ExecutorType.Activate, CardId.PotOfAvarice, () => Bot.Graveyard.Count >= 5);
             AddExecutor(ExecutorType.SpellSet, DefaultSpellSet);
             AddExecutor(ExecutorType.Repos, DefaultMonsterRepos);
         }
 
-        // --- MÉTODOS DE APOYO LÓGICO ---
-
         private bool QuickdrawLogic()
         {
-            // Descartar para invocar si tenemos materiales que brillan en el cementerio
             ClientCard discard = Bot.Hand.FirstOrDefault(c => c.IsCode(CardId.QuillboltHedgehog, CardId.JetSynchron, CardId.Doppelwarrior, CardId.NecroDefender));
             if (discard != null) { AI.SelectCard(discard); return true; }
             return Bot.GetMonsterCount() == 0;
@@ -139,7 +124,8 @@ namespace WindBot.Game.AI.Decks
             return false;
         }
 
-        private bool HasTunerInField() => Bot.MonsterZone.Any(c => c != null && c.Faceup && c.HasType(CardType.Tuner));
-        private bool HasNonTunerInField() => Bot.MonsterZone.Any(c => c != null && c.Faceup && !c.HasType(CardType.Tuner));
+        // --- CORRECCIÓN CRÍTICA DE COMPILACIÓN ---
+        private bool HasTunerInField() => Bot.MonsterZone.Any(c => c != null && c.IsFaceup() && c.HasType(CardType.Tuner));
+        private bool HasNonTunerInField() => Bot.MonsterZone.Any(c => c != null && c.IsFaceup() && !c.HasType(CardType.Tuner));
     }
 }
